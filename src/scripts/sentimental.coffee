@@ -2,21 +2,20 @@
 #   Calculate the average Sentimental / happiness score for each person based on their spoken words
 #
 # Dependencies:
-#   Sentimental
-#   Redis
+#   "Sentimental": "0.0.4"
+#   "redis": ">= 0.10.0"
 #
 # Configuration:
-#   None
+#   REDISTOGO_URL
 #
 # Commands:
-#   hubot check on {username}||everyone
+#   hubot check on <username>
+#   hubot check on everyone
 #
 # Notes:
-# { score: 3,
-#   comparative: 1,
-#   positive: { score: 3, comparative: 1, words: [ 'happy' ] },
-#   negative: { score: 1, comparative: 0.047619047619047616, words: [ 'shoot' ] } 
-# }
+#   All text spoken and not directed to hubot will be scored against the sentimental database
+#    and a running average will be saved.
+#   You can use the "check on" commands to look up current averages for the different users.
 
 analyze = require('Sentimental').analyze
 positivity = require('Sentimental').positivity
@@ -35,37 +34,32 @@ module.exports = (robot) ->
     if spokenWord and spokenWord.length > 0 and !new RegExp("^" + robot.name).test(spokenWord)
       analysis = analyze spokenWord
       username = msg.message.user.name
-      #console.log "#{username} scored #{analysis.score} with comparative #{analysis.comparative}"
-      #console.log analysis
 
       client.get "sent:userScore", (err, reply) ->
         if err
-          throw err
+          robot.emit 'error', err
         else if reply
           sent = JSON.parse(reply.toString())
         else
-          console.log "new sentimental data"
           sent = {}
 
         sent[username] = {score: 0, messages: 0, average: 0} if !sent[username] or !sent[username].average
         sent[username].score += analysis.score
         sent[username].messages += 1
         sent[username].average = sent[username].score / sent[username].messages
-        #console.log sent
 
         client.set "sent:userScore", JSON.stringify(sent)
 
         if analysis.score < -2
-          #msg.send "http://cdn.thenuge.com/wp-content/uploads/2011/11/sad-face-paper-bag.jpg"
           msg.send "stay positive #{msg.message.user.name}"
 
-        #console.log "#{username} now has #{sent[username].score} / #{sent[username].average}"
+        robot.logger.debug "#{username} now has #{sent[username].score} / #{sent[username].average}"
 
   robot.respond /check on (.*)/i, (msg) ->
     username = msg.match[1]
     client.get "sent:userScore", (err, reply) ->
       if err
-        throw err
+        robot.emit 'error', err
       else if reply
         sent = JSON.parse(reply.toString())
         if username != "everyone" and (!sent[username] or sent[username].average == undefined)
@@ -73,8 +67,6 @@ module.exports = (robot) ->
         else
           for user, data of sent
             if (user == username or username == "everyone") and data.average != undefined
-              #console.log user
-              #console.log data
               msg.send "#{user} has a happiness average of #{data.average}"
       else
         msg.send "I haven't collected data on anybody yet"
